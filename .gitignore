@@ -10,11 +10,10 @@ env/
 .env
 
 # ===== 数据（大文件/生成产物，不入库） =====
-data/raw/
-data/parsed/
-data/corpus/
-data/manifest.csv
-data/*.csv
+data/
+demo_data/
+golden_set/golden_set.csv
+golden_set/*.draft.csv
 !data/.gitkeep
 
 # ===== 向量/索引 =====
@@ -22,6 +21,10 @@ data/*.csv
 *.pkl
 *.npy
 *.part
+
+# ===== 评估报告（时间戳命名，自动生成；examples/ 下保留样例） =====
+experiments/*_report_*.md
+experiments/ab_compare_*.md
 
 # ===== 日志 =====
 logs/

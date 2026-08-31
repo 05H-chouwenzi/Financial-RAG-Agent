@@ -1,6 +1,7 @@
 # ================= 基础 =================
 requests>=2.31.0
 pandas>=2.0.0
+numpy>=1.24
 python-dotenv>=1.0.0
 tqdm>=4.66.0
 pydantic>=2.5.0
@@ -11,18 +12,28 @@ pypdf>=4.0.0
 pdfplumber>=0.11.0
 PyMuPDF>=1.24.0
 
-# ================= W4 检索 =================
+# ================= W3 切块/检索 =================
 jieba>=0.42.1
-rank-bm25>=0.2.2
 faiss-cpu>=1.7.4
+
+# ================= W4 生成/Agent =================
+openai>=1.30.0
+
+# ================= W6 API =================
+fastapi>=0.110.0
+uvicorn>=0.29.0
+
+# ================= 演示数据生成（可选） =================
+reportlab>=4.0.0
 
 # ===== 可选重武器（W3，体积大，按需单独安装） =====
 # paddlepaddle + paddleocr      # 扫描件 OCR / 版面分析
 # mineru                        # PDF 版面+表格解析
+# rapidocr-onnxruntime          # 轻量 OCR（项目一已有）
 
-# ===== W5 评估（按需安装） =====
+# ===== 可选高级检索（W4，按需安装） =====
+# sentence-transformers / FlagEmbedding   # 本地 bge 向量/重排模型
+# bm25s / rank-bm25                       # 高性能 BM25（默认用内置纯 Python 实现）
+
+# ===== 可选评估（W5，按需安装） =====
 # ragas                         # RAGAS 指标（依赖 langchain）
-
-# ===== W6 Agent（按需安装） =====
-# langgraph
-# openai

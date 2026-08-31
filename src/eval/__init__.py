@@ -1,1 +1,1 @@
-"""评估框架：golden set / 指标 / 报告（W5 实现）"""
+"""评估框架（W5）：golden set / 指标 / runner / RAGAS / 报告"""
