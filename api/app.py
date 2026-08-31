@@ -17,6 +17,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from config.settings import CORPUS_DIR, EVAL_REPORT_DIR, INDEX_DIR
@@ -131,6 +132,90 @@ def intent(question: str):
         raise HTTPException(503, _load_error or "未就绪")
     return {"question": question, "intent": _agent.classify(question)}
 
+
+_INDEX_HTML = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Financial-RAG-Agent</title>
+<style>
+  body{font-family:"Microsoft YaHei",sans-serif;max-width:860px;margin:0 auto;padding:24px;background:#f7f8fa;color:#222}
+  h1{font-size:22px} h2{font-size:16px;margin-top:24px}
+  .card{background:#fff;border:1px solid #e3e6ea;border-radius:10px;padding:16px;margin-top:12px}
+  input[type=text]{width:calc(100% - 90px);padding:10px;border:1px solid #ccc;border-radius:6px;font-size:14px}
+  button{padding:10px 16px;border:none;border-radius:6px;background:#1677ff;color:#fff;font-size:14px;cursor:pointer;margin-left:8px}
+  button:hover{background:#0958d9}
+  pre{background:#f6f8fa;border-radius:6px;padding:12px;overflow:auto;font-size:13px;white-space:pre-wrap;word-break:break-all}
+  .tag{display:inline-block;padding:2px 8px;border-radius:10px;background:#e6f4ff;color:#0958d9;font-size:12px;margin-right:6px}
+  .ref{font-size:12px;color:#666;margin-top:8px}
+  .err{color:#d4380d}
+  a{color:#1677ff}
+</style>
+</head>
+<body>
+<h1>📈 Financial-RAG-Agent</h1>
+<p>面向 A 股年报/公告的垂直金融 RAG 系统 · <a href="/docs">API 文档 (Swagger)</a></p>
+
+<div class="card">
+  <h2>Agent 问答</h2>
+  <div>
+    <input type="text" id="q" placeholder="例如：示例科技2023年的毛利率是多少？" onkeydown="if(event.key==='Enter')ask()">
+    <button onclick="ask()">提问</button>
+  </div>
+  <pre id="chat-out">（输入问题后点"提问"）</pre>
+</div>
+
+<div class="card">
+  <h2>检索</h2>
+  <div>
+    <input type="text" id="sq" placeholder="例如：示例科技2023年的营业收入" onkeydown="if(event.key==='Enter')search()">
+    <button onclick="search()">检索</button>
+  </div>
+  <pre id="search-out">（输入查询后点"检索"）</pre>
+</div>
+
+<script>
+async function post(url, body){
+  const r = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.detail || ("HTTP " + r.status)); }
+  return r.json();
+}
+async function ask(){
+  const q = document.getElementById("q").value.trim();
+  const out = document.getElementById("chat-out");
+  if(!q) return;
+  out.textContent = "思考中…";
+  try{
+    const d = await post("/api/chat", {question:q, top_k:5});
+    let s = "【意图】" + (d.intent||"") + (d.refused ? "（已拒答）" : "") + "\n\n" + d.answer;
+    if(d.num_check && d.num_check.length) s += "\n\n⚠️ 数字校验未通过: " + d.num_check.join(", ");
+    s += "\n\n--- 检索依据 ---";
+    (d.hits||[]).forEach((h,i)=>{ s += "\n["+(i+1)+"] " + h.source.split("\\").pop() + " 第" + h.page + "页 (score " + h.score.toFixed(3) + ")"; });
+    out.textContent = s;
+  }catch(e){ out.textContent = "❌ " + e.message; }
+}
+async function search(){
+  const q = document.getElementById("sq").value.trim();
+  const out = document.getElementById("search-out");
+  if(!q) return;
+  out.textContent = "检索中…";
+  try{
+    const d = await post("/api/search", {question:q, top_k:5});
+    let s = "";
+    (d.hits||[]).forEach((h,i)=>{ s += "["+(i+1)+"] " + h.source.split("\\").pop() + " 第" + h.page + "页 (score " + h.score.toFixed(3) + ")\n    " + h.text.replace(/\n/g," ") + "\n\n"; });
+    out.textContent = s || "（无结果）";
+  }catch(e){ out.textContent = "❌ " + e.message; }
+}
+</script>
+</body>
+</html>"""
+
+
+@app.get("/", response_class=HTMLResponse)
+def index():
+    """首页：简易演示界面"""
+    return HTMLResponse(_INDEX_HTML)
 
 @app.get("/api/eval/report")
 def eval_report():
