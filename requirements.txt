@@ -1,0 +1,28 @@
+# ================= 基础 =================
+requests>=2.31.0
+pandas>=2.0.0
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+pydantic>=2.5.0
+python-dateutil>=2.8.2
+
+# ================= W2-W3 文档解析 =================
+pypdf>=4.0.0
+pdfplumber>=0.11.0
+PyMuPDF>=1.24.0
+
+# ================= W4 检索 =================
+jieba>=0.42.1
+rank-bm25>=0.2.2
+faiss-cpu>=1.7.4
+
+# ===== 可选重武器（W3，体积大，按需单独安装） =====
+# paddlepaddle + paddleocr      # 扫描件 OCR / 版面分析
+# mineru                        # PDF 版面+表格解析
+
+# ===== W5 评估（按需安装） =====
+# ragas                         # RAGAS 指标（依赖 langchain）
+
+# ===== W6 Agent（按需安装） =====
+# langgraph
+# openai
