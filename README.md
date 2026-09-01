@@ -100,16 +100,57 @@ python scripts/run_eval.py --gen
 - [x] W4 混合检索 + 重排 + 金融增强
 - [x] W5 评估体系（golden set + Hit@k/MRR/NDCG + A/B + RAGAS）
 - [x] W6 金融 Agent + API
+- [x] 真实数据链路（2026-09-01）：巨潮下载 8 份真实年报/半年报（贵州茅台 600519 + 平安银行 000001，2022~2024）
+- [x] 本地 bge 向量（bge-small-zh-v1.5，512 维，ModelScope 下载），真实语义稠密检索
+- [x] 真实 golden set（22 条，覆盖 fact/table/calc/compare/multi_doc/reject 六类，证据可溯源）
+- [ ] 真实数据检索质量优化（审计政策文本压过财务表，见 experiments/retrieval_report_real_20260901.md）
 
 ## 已知限制与后续优化
 
-1. **LLM 需配置可用 Key**：本机 Dashscope 免费额度耗尽，生成评估走了占位回答；
-   配置可用 Key 后数字校验/RAGAS 才有真实意义。
+1. **LLM 需配置可用 Key**：本机 Dashscope 免费额度耗尽，生成/数字校验走占位逻辑；
+   配置可用 Key（backend/.env 的 `DASHSCOPE_API_KEY`）后才有真实回答与 RAGAS 评估。
 2. **重排默认词法兜底**：安装 `FlagEmbedding` + bge-reranker 模型后自动升级为交叉编码器重排。
-3. **真实 PDF 复杂场景**：扫描件/复杂版面建议安装 MinerU / PaddleOCR PP-Structure（解析器已留好集成点）。
-4. **Embedding 批量上限 10**：代码已按 Dashscope 限制处理，换其他服务商请调整 `embedding.py` 的 BATCH。
+3. **真实数据检索定位**：财务数字问答常命中审计「收入确认」政策段落而非「主要会计数据」表，
+   需进一步优化表格块权重/查询改写（真实 golden set 基线：Hit@5=47.4%，MRR=23.4%，hash 占位向量下 hybrid 反低于纯 BM25，bge 向量已重建索引待复测）。
+4. **真实 PDF 复杂场景**：扫描件/复杂版面建议安装 MinerU / PaddleOCR PP-Structure（解析器已留好集成点）。
 
 ## 技术栈
 
 Python 3.11 · pdfplumber/PyMuPDF · reportlab（演示） · FAISS · jieba（自实现 BM25）·
 RRF · bge-reranker（可选） · OpenAI 兼容接口 · FastAPI · RAGAS（可选）
+
+
+## 项目结构（参考 AI_Agent_Assistant_System 的 backend/frontend 布局）
+
+```text
+Financial-RAG-Agent/
+├── backend/                    # Python RAG 后端（FastAPI）
+│   ├── api/                    # API 路由（/api/chat, /api/search）
+│   ├── src/                    # 核心源码（解析/切块/索引/检索/生成）
+│   ├── scripts/                # 一键脚本（建数据/建索引/评估/启动 API）
+│   ├── config/                 # 配置
+│   ├── data/                   # 解析结果/语料/索引
+│   ├── demo_data/              # 演示 PDF
+│   ├── golden_set/             # 评估集
+│   ├── logs/                   # 运行日志
+│   ├── requirements.txt
+│   └── .env.example
+├── frontend/                   # FinFlow 金融研报 RAG 前端（Next.js 16 + shadcn/ui）
+│   ├── src/                    # 页面与组件（研报检索 / 图表检索 / 上传知识库）
+│   ├── public/                 # 静态资源与 mock 数据
+│   ├── package.json
+│   └── pnpm-workspace.yaml
+├── docs/                       # 规划文档
+├── experiments/                # 评估实验结果
+└── README.md
+```
+
+> 前端启动：`cd frontend && pnpm install && pnpm dev`（或 `node node_modules/next/dist/bin/next dev -p 5176`）
+> 后端启动：`cd backend && python scripts/serve_api.py`
+
+## 前端 ↔ 后端联调（FinFlow → Financial-RAG-Agent）
+
+- 前端通过 `frontend/src/app/api/finance/chat/route.ts` 代理调用后端 `POST /api/chat`（默认 http://127.0.0.1:8000，可用环境变量 `FINANCE_BACKEND_URL` 覆盖）。
+- 后端不可用时前端自动回退到内置 mock 演示，不会白屏。
+- 本地开发：后端 `cd backend && python scripts/serve_api.py`，前端 `cd frontend && node node_modules/next/dist/bin/next dev -p 5176`。
+- GitHub Pages 静态导出仍可用：构建时设置 `NEXT_PUBLIC_STATIC_EXPORT=true`（此时 basePath=/KnowFlow，API 代理在静态托管下不可用，仅演示 UI）。

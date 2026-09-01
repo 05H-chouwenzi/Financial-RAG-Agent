@@ -26,7 +26,7 @@ from config.settings import CORPUS_DIR, PARSED_DIR  # noqa: E402
 from src.chunking.chunker import build_chunks, save_chunks  # noqa: E402
 from src.ingestion.layout import load_blocks  # noqa: E402
 
-_YEAR_RE = re.compile(r"(20\d{2})")
+_YEAR_RE = re.compile(r"(20\d{2})年")  # 匹配"20xx年"（报告期），避免误取发布日期
 
 
 def parse_args() -> argparse.Namespace:
