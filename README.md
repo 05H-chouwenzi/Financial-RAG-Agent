@@ -104,15 +104,16 @@ python scripts/run_eval.py --gen
 - [x] 真实数据链路（2026-09-01）：巨潮下载 8 份真实年报/半年报（贵州茅台 600519 + 平安银行 000001，2022~2024）
 - [x] 本地 bge 向量（bge-small-zh-v1.5，512 维，ModelScope 下载），真实语义稠密检索
 - [x] 真实 golden set（22 条，覆盖 fact/table/calc/compare/multi_doc/reject 六类，证据可溯源）
+- [x] 真实评估：bge 向量 Hit@5=52.6% MRR=30.9%（hash 占位 47.4%/23.4%）；DeepSeek 生成拒答 100%、数字校验通过率 78.9%
 - [ ] 真实数据检索质量优化（审计政策文本压过财务表，见 experiments/retrieval_report_real_20260901.md）
 
 ## 已知限制与后续优化
 
 1. **LLM 已配置 DeepSeek**：`backend/.env` 使用 `DASHSCOPE_BASE_URL=https://api.deepseek.com/v1` + `LLM_MODEL=deepseek-chat`（OpenAI 兼容接口，变量名沿用历史命名）；
-   真实问答已验证：引用溯源 + 数字校验 + 拒答可用。已知边界：LLM 将 `14,769,360.50万元` 换算为 `1476.94亿` 时数字校验会误报（待优化：支持单位换算匹配）。
+   真实问答已验证：引用溯源 + 数字校验（已支持万元/亿元/百万元单位换算匹配）+ 拒答可用，数字校验通过率 78.9%，剩余误报来自回答中的解释性数字。
 2. **重排默认词法兜底**：安装 `FlagEmbedding` + bge-reranker 模型后自动升级为交叉编码器重排。
 3. **真实数据检索定位**：财务数字问答常命中审计「收入确认」政策段落而非「主要会计数据」表，
-   需进一步优化表格块权重/查询改写（真实 golden set 基线：Hit@5=47.4%，MRR=23.4%，hash 占位向量下 hybrid 反低于纯 BM25，bge 向量已重建索引待复测）。
+   需进一步优化表格块权重/查询改写（真实 golden set：bge 向量 Hit@5=52.6%，MRR=30.9%，hybrid 较 dense-only 提升 +11.1pp MRR）。
 4. **真实 PDF 复杂场景**：扫描件/复杂版面建议安装 MinerU / PaddleOCR PP-Structure（解析器已留好集成点）。
 
 ## 技术栈
