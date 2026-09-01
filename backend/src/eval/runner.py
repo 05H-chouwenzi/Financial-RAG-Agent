@@ -19,6 +19,31 @@ def _norm(text: str) -> str:
 
 
 _NUM_RE = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
+_UNIT_FACTORS = {"亿元": 1e8, "百万元": 1e6, "万元": 1e4, "千元": 1e3, "元": 1.0}
+_COMMON_FACTORS = (1.0, 1e3, 1e4, 1e6, 1e8)
+_REL_TOL = 0.01
+
+
+def _amounts(text: str) -> list[float]:
+    """提取金额数值（换算为元）；证据里裸数字按常见单位枚举"""
+    out = []
+    for m in re.finditer(r"(\d+(?:,\d{3})*(?:\.\d+)?)\s*(亿元|百万元|万元|千元|元)?", text or ""):
+        raw, unit = m.group(1), m.group(2) or ""
+        num = float(raw.replace(",", ""))
+        if unit in _UNIT_FACTORS:
+            out.append(num * _UNIT_FACTORS[unit])
+        elif len(raw.replace(",", "")) >= 3:
+            out.extend(num * f for f in _COMMON_FACTORS)
+    return out
+
+
+def _amount_equivalent(a: str, b: str) -> bool:
+    """两段文本是否存在金额等价（单位换算，1% 容差）：164,699(百万元) ≈ 1,646.99亿元"""
+    for x in _amounts(a):
+        for y in _amounts(b):
+            if x and y and abs(x - y) / max(y, 1e-9) <= _REL_TOL:
+                return True
+    return False
 
 
 def _extract_nums(text: str) -> set[str]:
@@ -53,6 +78,10 @@ def compute_relevant(chunks: list, item: GoldenItem) -> set[int]:
             continue
         if ev_nums and (_extract_nums(c.text) & ev_nums):
             relevant.add(i)
+            continue
+        if ev and _amount_equivalent(ev, c.text):
+            relevant.add(i)
+            continue
     if not relevant and expected:
         relevant = {i for i, c in enumerate(chunks) if c.doc_id in expected}
     return relevant

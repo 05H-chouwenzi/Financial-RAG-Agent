@@ -35,6 +35,12 @@ _YEAR_RE = re.compile(r"(20\d{2})")
 _TABLE_KW = ["股东", "持股", "十大", "占比", "比例", "指标", "利润表", "资产负债表",
              "现金流量", "表格", "前十", "持有", "构成", "结构"]
 
+# 财务指标类查询触发词：命中时启用"财务章节锚定"
+_FIN_QUERY_KW = ["营业收入", "净利润", "毛利率", "每股收益", "收益率", "总资产", "负债",
+                 "不良贷款率", "拨备覆盖率", "净息差", "成本收入比", "现金流", "同比", "增长", "下降"]
+# 财务指标表头锚点：年报/半年报里"主要会计数据"表的表头文字
+_FIN_SECTION_KW = ["主要会计数据", "会计数据和财务指标", "主要财务指标", "关键指标"]
+
 
 @dataclass
 class RetrievalConfig:
@@ -122,6 +128,24 @@ class Retriever:
         hits.sort(key=lambda h: h["score"], reverse=True)
         return hits
 
+    def _apply_financial_section_boost(self, query: str, hits: list[dict]) -> list[dict]:
+        """财务章节锚定：查询含财务指标词时，对'主要会计数据/财务指标'表头所在的 chunk 加权。
+
+        pdfplumber 常把年报里的指标表解析成 paragraph（而非 table），
+        但表头文字（主要会计数据/会计数据和财务指标）稳定保留在 chunk 开头，
+        利用它把指标表提到审计政策段落前面。
+        """
+        if not any(k in query for k in _FIN_QUERY_KW):
+            return hits
+        for h in hits:
+            text = h.get("text", "") or ""
+            section = h.get("section_path", "") or ""
+            head = text[:200] + section
+            if any(k in head for k in _FIN_SECTION_KW):
+                h["score"] *= 2.0
+        hits.sort(key=lambda h: h["score"], reverse=True)
+        return hits
+
     # ---------- 主入口 ----------
 
     def retrieve(self, query: str, top_k: Optional[int] = None, final_k: Optional[int] = None) -> list[dict]:
@@ -130,13 +154,16 @@ class Retriever:
         final_k = final_k or self.config.final_k
         q = self._rewrite_query(query)
 
-        dense_hits = self.dense.search(embed_one(q), top_k=max(top_k * 2, 10)) if self.dense else []
-        sparse_hits = self.bm25.search(q, top_k=max(top_k * 2, 10)) if self.bm25 else []
+        # 候选池放大：财务指标表（如"主要会计数据"）在 BM25/稠密里常排到 100+ 名，
+        # 只取 top_k*2 会让它们进不了融合候选，后续锚定加权无从生效。
+        cand = max(top_k * 10, 100)
+        dense_hits = self.dense.search(embed_one(q), top_k=cand) if self.dense else []
+        sparse_hits = self.bm25.search(q, top_k=cand) if self.bm25 else []
 
         if self.config.fusion == "rrf":
-            fused = fuse_rrf([dense_hits, sparse_hits], top_k=top_k)
+            fused = fuse_rrf([dense_hits, sparse_hits], top_k=cand)
         else:
-            fused = fuse_weighted(dense_hits, sparse_hits, self.config.w_dense, self.config.w_sparse, top_k=top_k)
+            fused = fuse_weighted(dense_hits, sparse_hits, self.config.w_dense, self.config.w_sparse, top_k=cand)
 
         # 富化：挂上 chunk 信息
         for h in fused:
@@ -152,6 +179,8 @@ class Retriever:
         fused = self._apply_time_filter(query, fused)
         fused = self._apply_report_type_filter(query, fused)
         fused = self._apply_table_weight(query, fused)
+        fused = self._apply_financial_section_boost(query, fused)
+        fused = fused[:max(top_k, 30)]  # 锚定加权后再截断，避免把低频表挤掉
 
         if self.reranker is not None and len(fused) > 1:
             fused = self.reranker.rerank(q, fused, top_k=final_k)
@@ -165,7 +194,7 @@ class Retriever:
     def build(cls, chunks: list[Chunk], config: Optional[RetrievalConfig] = None,
               verbose: bool = True) -> "Retriever":
         """从 chunk 库构建稠密 + 稀疏索引"""
-        texts = [c.text for c in chunks]
+        texts = [c.search_text() for c in chunks]  # 元数据增强文本，见 Chunk.search_text
         metas = [{"doc_id": c.doc_id, "block_type": c.block_type,
                   "period_year": c.period_year, "section_path": c.section_path,
                   "source": c.source, "company": c.company, "title": c.title} for c in chunks]

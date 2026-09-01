@@ -76,11 +76,11 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "80"))
 MAX_TABLE_ROWS = int(os.getenv("MAX_TABLE_ROWS", "30"))  # 超大表按行组分块上限
 
 # ===== 检索默认参数 =====
-RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "10"))    # 融合候选数
+RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "30"))    # 融合候选数（调大，避免财务表进不了候选）
 RETRIEVAL_FINAL_K = int(os.getenv("RETRIEVAL_FINAL_K", "5"))  # 最终返回数
 FUSION_W_DENSE = float(os.getenv("FUSION_W_DENSE", "0.5"))
 FUSION_W_SPARSE = float(os.getenv("FUSION_W_SPARSE", "0.5"))
-TABLE_WEIGHT = float(os.getenv("TABLE_WEIGHT", "1.2"))
+TABLE_WEIGHT = float(os.getenv("TABLE_WEIGHT", "2.0"))
 REFUSAL_THRESHOLD = float(os.getenv("REFUSAL_THRESHOLD", "0.10"))
 STRICT_NUMBERS = _get_bool("STRICT_NUMBERS", True)
 

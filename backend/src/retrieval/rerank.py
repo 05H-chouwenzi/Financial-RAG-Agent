@@ -59,9 +59,13 @@ class Reranker:
                 self.backend = "lexical"
 
         # 词法兜底：query 与 doc 的 token 重叠率 + 保留原分
+        # 用 search_text（含公司/年份/章节元数据）计算重叠，
+        # 否则"主要会计数据"等表格块原文不含公司名/年份，词法重叠被严重低估。
         q_tokens = set(tokenize(query))
         for h in hits:
-            d_tokens = set(tokenize(h["text"]))
+            chunk = h.get("chunk")
+            doc_text = chunk.search_text() if chunk is not None else h["text"]
+            d_tokens = set(tokenize(doc_text))
             overlap = len(q_tokens & d_tokens) / max(len(q_tokens), 1)
             h["score"] = 0.5 * h["score"] + 0.5 * overlap
         hits.sort(key=lambda h: h["score"], reverse=True)

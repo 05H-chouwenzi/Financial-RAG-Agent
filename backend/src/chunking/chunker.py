@@ -39,6 +39,20 @@ class Chunk:
     def to_dict(self) -> dict:
         return asdict(self)
 
+    def search_text(self) -> str:
+        """索引检索用文本：元数据前缀 + 原文。
+
+        财务指标表（如"主要会计数据"）原文信息密度低（只有行名+数字），
+        拼接公司/标题/年份/章节后，BM25 与稠密向量才能命中"贵州茅台2023年"等查询词。
+        """
+        parts = [self.company, self.title]
+        if self.period_year:
+            parts.append(f"{self.period_year}年")
+        if self.section_path:
+            parts.append(self.section_path)
+        prefix = " ".join(x for x in parts if x)
+        return f"{prefix}\n{self.text}"
+
     @classmethod
     def from_dict(cls, d: dict) -> "Chunk":
         known = set(cls.__dataclass_fields__.keys())

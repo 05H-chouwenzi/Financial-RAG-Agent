@@ -28,6 +28,13 @@ from src.ingestion.layout import load_blocks  # noqa: E402
 
 _YEAR_RE = re.compile(r"(20\d{2})年")  # 匹配"20xx年"（报告期），避免误取发布日期
 
+# 股票代码 → 公司名（检索元数据用；文件名可能不含公司名，如平安"2023年年度报告.pdf"）
+_COMPANY_NAMES = {
+    "000001": "平安银行", "600519": "贵州茅台", "000002": "万科A", "600036": "招商银行",
+    "600030": "中信证券", "601318": "中国平安", "300750": "宁德时代", "600276": "恒瑞医药",
+    "000858": "五粮液", "601899": "紫金矿业",
+}
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="切块建库：LayoutBlock → Chunk")
@@ -47,7 +54,7 @@ def infer_doc_meta(doc_id: str) -> dict:
     parts = doc_id.replace("\\", "/").split("/")
     if parts:
         code = parts[0]
-        meta["company"] = code
+        meta["company"] = _COMPANY_NAMES.get(code, code)
         m = _YEAR_RE.search(doc_id)
         if m:
             meta["period_year"] = int(m.group(1))
