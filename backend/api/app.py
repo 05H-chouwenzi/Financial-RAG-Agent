@@ -226,3 +226,8 @@ def eval_report():
         return {"reports": []}
     files = sorted(outdir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)[:20]
     return {"reports": [{"name": f.name, "path": str(f)} for f in files]}
+
+
+# ===== 知识库管理（上传/列表/删除，见 api/kb.py）=====
+from api.kb import router as kb_router
+app.include_router(kb_router)

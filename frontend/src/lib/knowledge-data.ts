@@ -26,6 +26,8 @@ export interface KnowledgeFile {
    * 虚拟(在线新建/模拟入库)文档不设置该字段。
    */
   fileName?: string;
+  /** 是否来自后端语料(backend/data/raw);为 true 时删除会同步调用后端 API */
+  backend?: boolean;
   /** 文档内容,用于"内容"关键词搜索、虚拟文档预览与导出 */
   content: string;
 }

@@ -53,6 +53,7 @@ import {
   downloadVirtualFile,
   realFileUrl,
   todayLabel,
+  type FileKind,
   type FolderId,
   type KnowledgeFile,
 } from "@/lib/knowledge-data";
@@ -78,6 +79,22 @@ const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
   { value: "name-asc", label: "名称" },
   { value: "size-desc", label: "大小" },
 ];
+
+/** 后端知识库文件 → 前端 KnowledgeFile 结构 */
+function toKbFile(f: Record<string, unknown>): KnowledgeFile {
+  return {
+    id: (f.id as string) || `kb-${Math.random().toString(36).slice(2)}`,
+    name: (f.name as string) || "未命名",
+    kind: (f.kind as FileKind) || "pdf",
+    folder: (f.folder === "atlas" ? "atlas" : "standard") as FolderId,
+    sizeKB: Number(f.sizeKB) || 0,
+    modifiedLabel: (f.modifiedLabel as string) || "",
+    modifiedTs: Number(f.modifiedTs) || 0,
+    fileName: f.fileName as string | undefined,
+    content: (f.content as string) || "",
+    backend: true,
+  };
+}
 
 export default function KnowledgePage() {
   // 与站内其他页面一致:挂载后才渲染,规避 SSR/CSR 水合不一致
@@ -188,56 +205,64 @@ export default function KnowledgePage() {
   }, [showStatus]);
 
   const handleDelete = useCallback(
-    (file: KnowledgeFile) => {
+    async (file: KnowledgeFile) => {
       const ok = window.confirm(
         `确定要删除「${file.name}」吗?删除后不可恢复。`
       );
       if (!ok) return;
-      setFiles((prev) => prev.filter((f) => f.id !== file.id));
-      if (previewFile?.id === file.id) setPreviewFile(null);
-      showStatus({ type: "success", message: `已删除「${file.name}」` });
+      try {
+        if (file.backend && file.fileName) {
+          // fileName 形如 api/knowledge/file/<rel> → 转回后端相对路径
+          const rel = file.fileName.replace(/^api\/knowledge\/file\//, "");
+          const res = await fetch("/api/knowledge?file=" + encodeURIComponent(rel), {
+            method: "DELETE",
+          });
+          if (!res.ok) throw new Error("删除失败");
+        }
+        setFiles((prev) => prev.filter((f) => f.id !== file.id));
+        if (previewFile?.id === file.id) setPreviewFile(null);
+        showStatus({ type: "success", message: `已删除「${file.name}」` });
+      } catch {
+        showStatus({ type: "error", message: "删除失败,后端不可用" });
+      }
     },
     [previewFile, showStatus]
   );
 
-  /* ---------------- PDF 上传(模拟进度,静态站点无后端) ---------------- */
+  /* ---------------- PDF 上传(真实:后端保存 + 语料重建) ---------------- */
 
   const startSimulatedUpload = useCallback(
-    (file: File) => {
+    async (file: File) => {
       if (uploadTimerRef.current) clearInterval(uploadTimerRef.current);
-      setUploadTask({ name: file.name, progress: 0 });
-      uploadTimerRef.current = setInterval(() => {
-        setUploadTask((task) => {
-          if (!task) return task;
-          const next = Math.min(100, task.progress + Math.ceil(Math.random() * 14));
-          if (next >= 100) {
-            if (uploadTimerRef.current) {
-              clearInterval(uploadTimerRef.current);
-              uploadTimerRef.current = null;
-            }
-            // 上传完成:入库(目标为菜单中选择的知识库)
-            const rawName = file.name.replace(/\.pdf$/i, "") || "未命名文档";
-            const folder: FolderId = importTargetRef.current;
+      setUploadTask({ name: file.name, progress: 10 });
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/knowledge", { method: "POST", body: form });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "上传失败");
+        setUploadTask((t) => (t ? { ...t, progress: 80 } : t));
+        // 上传成功后刷新列表(保留图表分类 mock)
+        const listRes = await fetch("/api/knowledge");
+        if (listRes.ok) {
+          const list = await listRes.json();
+          if (Array.isArray(list.files)) {
             setFiles((prev) => [
-              {
-                id: `kf-upload-${++idRef.current}`,
-                name: rawName,
-                kind: "pdf",
-                folder,
-                sizeKB: Math.max(1, Math.round(file.size / 1024)),
-                modifiedLabel: todayLabel(),
-                modifiedTs: Date.now(),
-                content: `用户上传的 PDF 文档:${rawName}。已加入${FOLDER_LABELS[folder]}。`,
-              },
-              ...prev,
+              ...list.files.map(toKbFile),
+              ...prev.filter((f) => f.folder === "atlas"),
             ]);
-            setTimeout(() => setUploadTask(null), 400);
-            showStatus({ type: "success", message: `「${file.name}」上传成功,已加入${FOLDER_LABELS[folder]}` });
-            return { ...task, progress: 100 };
           }
-          return { ...task, progress: next };
+        }
+        setUploadTask((t) => (t ? { ...t, progress: 100 } : t));
+        setTimeout(() => setUploadTask(null), 400);
+        showStatus({
+          type: "success",
+          message: `「${file.name}」上传成功,已进入知识库(索引重建中,稍后可在问答中检索到)`,
         });
-      }, 120);
+      } catch (e) {
+        setUploadTask(null);
+        showStatus({ type: "error", message: e instanceof Error ? e.message : "上传失败" });
+      }
     },
     [showStatus]
   );
@@ -263,6 +288,26 @@ export default function KnowledgePage() {
     }
     startSimulatedUpload(file);
   };
+
+  // 初始加载:优先从后端语料拉取真实文件列表(失败回退 INITIAL_FILES mock)
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/knowledge")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("backend down"))))
+      .then((data) => {
+        if (cancelled || !Array.isArray(data.files)) return;
+        setFiles((prev) => [
+          ...data.files.map(toKbFile),
+          ...prev.filter((f) => f.folder === "atlas"),
+        ]);
+      })
+      .catch(() => {
+        /* 后端不可用:保留 INITIAL_FILES 内置演示数据 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!mounted) return null;
 
