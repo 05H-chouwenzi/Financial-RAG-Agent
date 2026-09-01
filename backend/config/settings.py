@@ -10,7 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(BASE_DIR / ".env")
+    load_dotenv(BASE_DIR / ".env", override=True)  # .env 优先，避免系统残留环境变量覆盖
 except Exception:  # dotenv 未安装时静默跳过
     pass
 

@@ -64,9 +64,10 @@ python scripts/run_eval.py --gen
 
 | 配置 | 说明 |
 |---|---|
-| `EMBEDDING_PROVIDER` | `dashscope`（推荐）/ `bge`（本地）/ `hash`（占位演示） |
-| `DASHSCOPE_API_KEY` | 阿里云 Dashscope Key（embedding + LLM 共用） |
-| `LLM_MODEL` | 默认 `qwen-plus` |
+| `EMBEDDING_PROVIDER` | `bge`（本地，推荐）/ `dashscope` / `hash`（占位演示） |
+| `DASHSCOPE_API_KEY` | LLM Key（OpenAI 兼容；本机已配 DeepSeek key） |
+| `DASHSCOPE_BASE_URL` | LLM 服务地址，默认阿里云；DeepSeek 填 `https://api.deepseek.com/v1` |
+| `LLM_MODEL` | 默认 `qwen-plus`；DeepSeek 填 `deepseek-chat` |
 | `RERANK_ENABLED` | 重排开关（默认 true；装 FlagEmbedding 后自动用 bge-reranker） |
 | `RETRIEVAL_TOP_K / FINAL_K` | 融合候选数 / 最终返回数 |
 | `FUSION` | `rrf`（默认）/ `weighted` |
@@ -107,8 +108,8 @@ python scripts/run_eval.py --gen
 
 ## 已知限制与后续优化
 
-1. **LLM 需配置可用 Key**：本机 Dashscope 免费额度耗尽，生成/数字校验走占位逻辑；
-   配置可用 Key（backend/.env 的 `DASHSCOPE_API_KEY`）后才有真实回答与 RAGAS 评估。
+1. **LLM 已配置 DeepSeek**：`backend/.env` 使用 `DASHSCOPE_BASE_URL=https://api.deepseek.com/v1` + `LLM_MODEL=deepseek-chat`（OpenAI 兼容接口，变量名沿用历史命名）；
+   真实问答已验证：引用溯源 + 数字校验 + 拒答可用。已知边界：LLM 将 `14,769,360.50万元` 换算为 `1476.94亿` 时数字校验会误报（待优化：支持单位换算匹配）。
 2. **重排默认词法兜底**：安装 `FlagEmbedding` + bge-reranker 模型后自动升级为交叉编码器重排。
 3. **真实数据检索定位**：财务数字问答常命中审计「收入确认」政策段落而非「主要会计数据」表，
    需进一步优化表格块权重/查询改写（真实 golden set 基线：Hit@5=47.4%，MRR=23.4%，hash 占位向量下 hybrid 反低于纯 BM25，bge 向量已重建索引待复测）。
