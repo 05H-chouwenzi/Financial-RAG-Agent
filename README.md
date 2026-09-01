@@ -147,7 +147,7 @@ Hit@5 +18.8pp、MRR +20.2pp、NDCG@5 +26.8pp，矛盾消除。历史 `v3` 与 `a
 ## 技术栈
 
 Python 3.11 · pdfplumber/PyMuPDF · reportlab（演示） · FAISS · jieba（自实现 BM25）·
-RRF · bge-reranker（可选） · OpenAI 兼容接口 · FastAPI · RAGAS（可选）
+RRF · FlagEmbedding bge-reranker-v2-m3（真实重排） · OpenAI 兼容接口 · FastAPI · RAGAS（已实跑）
 
 
 ## 项目结构（参考 AI_Agent_Assistant_System 的 backend/frontend 布局）
