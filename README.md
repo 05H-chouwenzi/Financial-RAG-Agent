@@ -69,6 +69,10 @@ python scripts/run_eval.py --gen
 | `DASHSCOPE_BASE_URL` | LLM 服务地址，默认阿里云；DeepSeek 填 `https://api.deepseek.com/v1` |
 | `LLM_MODEL` | 默认 `qwen-plus`；DeepSeek 填 `deepseek-chat` |
 | `RERANK_ENABLED` | 重排开关（默认 true；装 FlagEmbedding 后自动用 bge-reranker） |
+| `RERANK_MODEL` | bge-reranker 模型路径（默认 `BAAI/bge-reranker-v2-m3`；可指向 ModelScope 本地路径） |
+| `RERANK_BACKEND` | `auto`（默认）/ `bge` / `lexical`，强制指定重排后端 |
+| `FINANCIAL_BOOST` | 指标表/股东信息锚定 pre-rerank 加权系数（默认 2.0） |
+| `FINANCIAL_ANCHOR_BONUS` | 指标表核心块在重排阶段的加分（默认 0.10） |
 | `RETRIEVAL_TOP_K / FINAL_K` | 融合候选数 / 最终返回数 |
 | `FUSION` | `rrf`（默认）/ `weighted` |
 | `REFUSAL_THRESHOLD` | 拒答阈值 |
@@ -104,17 +108,40 @@ python scripts/run_eval.py --gen
 - [x] 真实数据链路（2026-09-01）：巨潮下载 8 份真实年报/半年报（贵州茅台 600519 + 平安银行 000001，2022~2024）
 - [x] 本地 bge 向量（bge-small-zh-v1.5，512 维，ModelScope 下载），真实语义稠密检索
 - [x] 真实 golden set（22 条，覆盖 fact/table/calc/compare/multi_doc/reject 六类，证据可溯源）
-- [x] 真实评估：Hit@5=94.7% MRR=58.9%（hash 47.4%/23.4% → bge 52.6%/30.9% → 检索优化后 94.7%/58.9%）；DeepSeek 生成拒答 100%、数字校验通过率 78.9%+
-- [x] 检索优化：候选池放大、财务章节锚定加权、元数据增强检索文本、重排兜底改增强文本、股票代码→公司名映射
-- [ ] 剩余短板：茅台2023营收单个样本仍命中审计段落（19 样本中 1 例）
+- [x] 真实评估（75 条 golden set，69 条非拒答）：Hit@5=100%、MRR=81.5%（词法重排）
+  - 演进：hash 47.4%/23.4%（19 条）→ bge 52.6%/30.9% → 检索四连优化 94.7%/58.9% → 指标表核心块+股东信息锚定 100%/81.5%（69 条全命中，含「茅台2023营收」「控股股东名称」）
+- [x] 检索优化：候选池放大、财务章节锚定加权（指标表核心块 + 重排加分）、元数据增强检索文本、重排兜底改增强文本、股票代码→公司名映射、年报/半年报口径区分
+- [x] 真实重排：安装 FlagEmbedding + bge-reranker-v2-m3（ModelScope 本地下载），19 条原样本 Hit@5=100%、MRR=96.1%（词法兜底 81.1%）
+- [x] 真实 golden set：75 条（fact/table/calc/compare/multi_doc/reject 六类，证据可溯源，覆盖 2022~2024 年报与半年报）
+- [x] RAGAS 实跑（DeepSeek LLM + 本地 bge embeddings，19 条子集）：faithfulness 0.59 / answer_relevancy 0.96 / context_precision 0.78 / context_recall 1.00
+
+## 关于早期 A/B 报告的矛盾（已解释并修正）
+
+历史报告 `ab_compare_real_v2_20260901.md` 曾显示 dense-only 的 MRR（68.4%）高于当时"当前配置"（53.6%），
+与 README 宣称的"检索优化有效"矛盾。原因：
+
+1. **词法兜底重排稀释了 MRR**：当时未装 FlagEmbedding，重排走"token 重叠率 + 原分各 50%"，把融合阶段排好的
+   指标表/表格块重新打乱，导致 top-1~3 命中率下降（Hit@3 从 84.2% 掉到 57.9%），MRR 随之降低；
+2. **指标表锚定不足**：财务指标表在 BM25/稠密下常排 100+ 名，当时只做 ×2 pre-rerank 加权，进不了重排候选池或
+   被重排挤掉（如「茅台2023营收」命中审计政策段落）；
+3. **报告口径不一致**：README 引用了 `v2_amt`（94.7%）的最新数字，而仓库里最后提交的 `v3` 报告是中间态（84.2%），
+   且 `ab_compare_v2` 也是同批生成，三处数字对不上。
+
+修正：实现"指标表核心块 + 股东信息锚定"（pre-rerank 加权 ×2 + 重排阶段加分 0.10 + 年报/半年报口径区分），
+并重跑全量 69 条 A/B（`ab_compare_final_ab_lexical_v2_20260901.md`）：当前配置全面优于 dense-only——
+Hit@5 +18.8pp、MRR +20.2pp、NDCG@5 +26.8pp，矛盾消除。历史 `v3` 与 `ab_compare_v2` 报告已删除。
 
 ## 已知限制与后续优化
 
 1. **LLM 已配置 DeepSeek**：`backend/.env` 使用 `DASHSCOPE_BASE_URL=https://api.deepseek.com/v1` + `LLM_MODEL=deepseek-chat`（OpenAI 兼容接口，变量名沿用历史命名）；
    真实问答已验证：引用溯源 + 数字校验（已支持万元/亿元/百万元单位换算匹配）+ 拒答可用，数字校验通过率 78.9%，剩余误报来自回答中的解释性数字。
-2. **重排默认词法兜底**：安装 `FlagEmbedding` + bge-reranker 模型后自动升级为交叉编码器重排。
-3. **真实数据检索定位**：财务数字问答常命中审计「收入确认」政策段落而非「主要会计数据」表，
-   已通过元数据增强/章节锚定/候选池放大优化至 Hit@5=94.7%、MRR=58.9%；剩余个别样本（如茅台2023营收）仍命中审计政策段落，可用真实重排器（bge-reranker）或查询改写进一步收敛。
+2. **真实重排可用**：已安装 `FlagEmbedding` + bge-reranker-v2-m3（ModelScope 本地下载，`RERANK_MODEL` 指向本地路径）。
+   默认后端为 bge；可用 `RERANK_BACKEND=lexical` 强制词法兜底（批量评估加速）。
+3. **真实数据检索定位**：财务数字问答曾命中审计「收入确认」政策段落而非「主要会计数据」表。
+   已通过元数据增强/章节锚定/候选池放大/「指标表核心块」重排加分优化至 Hit@5=100%、MRR=81.5%（69 条，词法）；
+   「茅台2023营收」已修复（指标表进入 top-1）；「控股股东名称」类问题通过股东信息锚定命中释义段。
+4. **RAGAS 与 DeepSeek 兼容注意**：DeepSeek 只支持 `n=1` 且无 embeddings 接口，故 `ResponseRelevancy(strictness=1)` +
+   本地 bge 向量作 embeddings；该配置已在 `src/eval/ragas_eval.py` 处理。
 4. **真实 PDF 复杂场景**：扫描件/复杂版面建议安装 MinerU / PaddleOCR PP-Structure（解析器已留好集成点）。
 
 ## 技术栈
@@ -130,6 +157,7 @@ Financial-RAG-Agent/
 ├── backend/                    # Python RAG 后端（FastAPI）
 │   ├── api/                    # API 路由（/api/chat, /api/search）
 │   ├── src/                    # 核心源码（解析/切块/索引/检索/生成）
+│   ├── tests/                  # pytest 单测（指标/数字校验/检索锚定/评估匹配器）
 │   ├── scripts/                # 一键脚本（建数据/建索引/评估/启动 API）
 │   ├── config/                 # 配置
 │   ├── data/                   # 解析结果/语料/索引

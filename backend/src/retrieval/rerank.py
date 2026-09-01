@@ -6,6 +6,7 @@ bge-reranker 是交叉编码器（query,doc 一起编码打分），比双塔向
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from config.settings import RERANK_MODEL
@@ -15,12 +16,18 @@ logger = logging.getLogger("rerank")
 
 
 class Reranker:
-    def __init__(self, model_name: Optional[str] = None):
+    def __init__(self, model_name: Optional[str] = None, anchor_bonus: float = 0.0):
         self.model_name = model_name or RERANK_MODEL
+        self.anchor_bonus = anchor_bonus
         self._model = None
         self.backend = self._detect()
 
     def _detect(self) -> str:
+        # RERANK_BACKEND=auto|bge|lexical：默认 auto（装了 FlagEmbedding 用 bge），
+        # 可强制 lexical 加速（如 RAGAS 批量评估时不想等交叉编码器）。
+        forced = os.getenv("RERANK_BACKEND", "auto").strip().lower()
+        if forced in ("bge", "lexical"):
+            return forced
         try:
             from FlagEmbedding import FlagReranker  # noqa: F401
 
@@ -52,6 +59,8 @@ class Reranker:
                 scores = self._model.compute_score(pairs, normalize=True)
                 for h, s in zip(hits, scores):
                     h["score"] = float(s)
+                    # 指标表核心块：交叉编码分数之上再加固定权重
+                    h["score"] += float(h.get("_fin_anchor", 0.0) or 0) * self.anchor_bonus
                 hits.sort(key=lambda h: h["score"], reverse=True)
                 return hits[:top_k]
             except Exception as e:  # noqa: BLE001
@@ -68,5 +77,9 @@ class Reranker:
             d_tokens = set(tokenize(doc_text))
             overlap = len(q_tokens & d_tokens) / max(len(q_tokens), 1)
             h["score"] = 0.5 * h["score"] + 0.5 * overlap
+            # 指标表核心块：查询问"营业收入/净利润/不良贷款率..."这类指标时，
+            # "主要会计数据"表就是规范答案来源，词法兜底重排里给它固定加分，
+            # 避免它被信息量相近的审计政策段落/半年报段落挤掉。
+            h["score"] += float(h.get("_fin_anchor", 0.0) or 0) * self.anchor_bonus
         hits.sort(key=lambda h: h["score"], reverse=True)
         return hits[:top_k]

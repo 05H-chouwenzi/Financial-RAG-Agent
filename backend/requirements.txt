@@ -33,7 +33,10 @@ reportlab>=4.0.0
 
 # ===== 可选高级检索（W4，按需安装） =====
 # sentence-transformers / FlagEmbedding   # 本地 bge 向量/重排模型
+#   pip install FlagEmbedding sentence-transformers
 # bm25s / rank-bm25                       # 高性能 BM25（默认用内置纯 Python 实现）
 
 # ===== 可选评估（W5，按需安装） =====
 # ragas                         # RAGAS 指标（依赖 langchain）
+#   pip install ragas langchain-community langchain-openai
+#   （RAGAS 用项目 .env 的 OpenAI 兼容 LLM + 本地 bge embeddings，见 src/eval/ragas_eval.py）

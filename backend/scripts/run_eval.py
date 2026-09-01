@@ -41,6 +41,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--gen", action="store_true", help="运行生成评估")
     p.add_argument("--ragas", action="store_true", help="生成评估时运行 RAGAS（需安装 ragas）")
     p.add_argument("--no-compare", action="store_true", help="不跑 dense-only 对照实验")
+    p.add_argument("--no-retrieval", action="store_true", help="跳过检索评估（只跑生成）")
+    p.add_argument("--limit", type=int, default=0, help="只取前 N 条 golden item（0=全部）")
     p.add_argument("--tag", default="", help="实验标签（写入报告）")
     return p.parse_args()
 
@@ -63,6 +65,8 @@ def main() -> int:
     if not golden_items:
         logger.error("golden set 为空: %s（先用 build_golden_set.py 生成）", args.golden)
         return 2
+    if args.limit and args.limit < len(golden_items):
+        golden_items = golden_items[: args.limit]
     logger.info("golden set: %d 条，类型分布 %s", len(golden_items), type_distribution(golden_items))
 
     retriever = load_index(index_dir, chunk_path)
@@ -71,20 +75,25 @@ def main() -> int:
     tag = args.tag or datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # ---- 当前配置检索评估 ----
-    metrics, per_query = run_retrieval_on(retriever, golden_items, tag)
-    report = write_retrieval_report(
-        outdir / f"retrieval_report_{tag}.md", f"当前配置（{tag}）", metrics, per_query,
-        extra={"fusion": retriever.config.fusion, "use_rerank": retriever.config.use_rerank,
-               "w_dense": retriever.config.w_dense, "w_sparse": retriever.config.w_sparse,
-               "table_weight": retriever.config.table_weight,
-               "time_filter": retriever.config.time_filter,
-               "report_type_filter": retriever.config.report_type_filter},
-    )
-    logger.info("检索评估: %s", {k: round(v, 4) if isinstance(v, float) else v for k, v in metrics.items() if k != "n"})
-    logger.info("报告 → %s", report)
+    metrics = per_query = None
+    if args.no_retrieval:
+        logger.info("跳过检索评估（--no-retrieval）")
+    else:
+        metrics, per_query = run_retrieval_on(retriever, golden_items, tag)
+    if metrics is not None:
+        report = write_retrieval_report(
+            outdir / f"retrieval_report_{tag}.md", f"当前配置（{tag}）", metrics, per_query,
+            extra={"fusion": retriever.config.fusion, "use_rerank": retriever.config.use_rerank,
+                   "w_dense": retriever.config.w_dense, "w_sparse": retriever.config.w_sparse,
+                   "table_weight": retriever.config.table_weight,
+                   "time_filter": retriever.config.time_filter,
+                   "report_type_filter": retriever.config.report_type_filter},
+        )
+        logger.info("检索评估: %s", {k: round(v, 4) if isinstance(v, float) else v for k, v in metrics.items() if k != "n"})
+        logger.info("报告 → %s", report)
 
     # ---- A/B 对照：dense-only（无重排、无表格加权、纯稠密） ----
-    if not args.no_compare:
+    if metrics is not None and not args.no_compare:
         base_cfg = RetrievalConfig(
             fusion="weighted", w_dense=1.0, w_sparse=0.0,
             use_rerank=False, time_filter=False, enable_table_weight=False,

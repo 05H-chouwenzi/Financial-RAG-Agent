@@ -22,9 +22,11 @@ golden_set/*.draft.csv
 *.npy
 *.part
 
-# ===== 评估报告（时间戳命名，自动生成；examples/ 下保留样例） =====
-experiments/*_report_*.md
-experiments/ab_compare_*.md
+# ===== 评估报告：实验记录入库（README 数字与 experiments/ 对齐） =====
+# 注意：backend/experiments/ 下带时间戳的报告作为实验证据保留并纳入版本管理。
+
+# ===== 参考仓库（外部克隆，不入库） =====
+refs/
 
 # ===== 日志 =====
 logs/

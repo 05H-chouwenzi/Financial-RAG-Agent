@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Optional
 
 from config.settings import (
+    FINANCIAL_ANCHOR_BONUS,
+    FINANCIAL_BOOST,
     FUSION_W_DENSE,
     FUSION_W_SPARSE,
     RETRIEVAL_FINAL_K,
@@ -37,9 +39,18 @@ _TABLE_KW = ["股东", "持股", "十大", "占比", "比例", "指标", "利润
 
 # 财务指标类查询触发词：命中时启用"财务章节锚定"
 _FIN_QUERY_KW = ["营业收入", "净利润", "毛利率", "每股收益", "收益率", "总资产", "负债",
-                 "不良贷款率", "拨备覆盖率", "净息差", "成本收入比", "现金流", "同比", "增长", "下降"]
+                 "不良贷款率", "拨备覆盖率", "净息差", "成本收入比", "现金流", "同比", "增长", "下降",
+                 "净资产", "所有者权益", "每股净资产"]
+# 指标表核心指标：这些指标的规范答案就落在"主要会计数据/财务指标"表里，
+# 命中时把指标表当作"核心块"强锚定（重排加权重）。毛利率等指标（答案在分行业/分产品表）不放进来，
+# 避免指标表挤掉正确的分产品表。
+_MAIN_TABLE_KW = [k for k in _FIN_QUERY_KW if k != "毛利率"]
 # 财务指标表头锚点：年报/半年报里"主要会计数据"表的表头文字
 _FIN_SECTION_KW = ["主要会计数据", "会计数据和财务指标", "主要财务指标", "关键指标"]
+# 股东/公司名查询触发词：命中时启用"股东信息锚定"（问"控股股东名称"等）
+_PARTY_QUERY_KW = ["控股股东", "股东名称", "大股东", "前十大股东", "前十名股东", "持股"]
+# 股东信息定义锚点：释义/定义段常见"控股股东…指 公司全称"模式
+_PARTY_SECTION_KW = ["控股股东"]
 
 
 @dataclass
@@ -54,6 +65,8 @@ class RetrievalConfig:
     table_weight: float = TABLE_WEIGHT
     enable_table_weight: bool = True
     query_rewrite: bool = False             # LLM 查询改写（需配置 LLM）
+    financial_boost: float = FINANCIAL_BOOST  # 指标表 pre-rerank 加权系数（进入重排候选池用）
+    financial_anchor_bonus: float = FINANCIAL_ANCHOR_BONUS  # 指标表核心块在重排阶段的额外加分（0-1 尺度）
     fusion: str = "rrf"                     # weighted / rrf（默认 rrf，对分数尺度不敏感）
     llm: Optional[object] = None            # 查询改写用的 LLM
 
@@ -73,7 +86,7 @@ class Retriever:
         self.dense = dense or DenseIndex()
         self.bm25 = bm25 or BM25Index()
         self.config = config or RetrievalConfig()
-        self.reranker = Reranker() if self.config.use_rerank else None
+        self.reranker = Reranker(anchor_bonus=self.config.financial_anchor_bonus) if self.config.use_rerank else None
 
     # ---------- 查询增强 ----------
 
@@ -105,15 +118,30 @@ class Retriever:
         kept = [h for h in hits if h.get("period_year") == year]
         return kept if kept else hits  # 过滤后为空则不过滤，避免全空
 
+    @staticmethod
+    def _is_annual_report(h: dict) -> bool:
+        """判断 hit 是否来自年报（注意'半年度报告'包含'年度报告'子串，必须排除半年报）"""
+        title = h.get("title", "") or ""
+        src = (h.get("source", "") or "").replace("\\", "/")
+        if "半年度报告" in title or "/bndbg/" in src:
+            return False
+        return "年度报告" in title or "/ndbg/" in src
+
+    @staticmethod
+    def _is_half_year_report(h: dict) -> bool:
+        title = h.get("title", "") or ""
+        src = (h.get("source", "") or "").replace("\\", "/")
+        return "半年度报告" in title or "/bndbg/" in src
+
     def _apply_report_type_filter(self, query: str, hits: list[dict]) -> list[dict]:
         """报告类型过滤：查询含'半年报/年报'时，优先保留对应报告类型的 chunk"""
         if not self.config.report_type_filter:
             return hits
-        if "半年报" in query:
-            kept = [h for h in hits if "半年度报告" in h.get("title", "") or "bndbg" in h.get("source", "")]
+        if "半年报" in query and "年报" not in query:
+            kept = [h for h in hits if self._is_half_year_report(h)]
             return kept if kept else hits
-        if "年报" in query:
-            kept = [h for h in hits if "年度报告" in h.get("title", "") or "ndbg" in h.get("source", "")]
+        if "年报" in query and "半年报" not in query:
+            kept = [h for h in hits if self._is_annual_report(h)]
             return kept if kept else hits
         return hits
 
@@ -129,20 +157,59 @@ class Retriever:
         return hits
 
     def _apply_financial_section_boost(self, query: str, hits: list[dict]) -> list[dict]:
-        """财务章节锚定：查询含财务指标词时，对'主要会计数据/财务指标'表头所在的 chunk 加权。
+        """财务章节锚定（指标表核心块）：查询含"指标表核心指标"词时，把指标表 chunk 提到前面。
 
         pdfplumber 常把年报里的指标表解析成 paragraph（而非 table），
-        但表头文字（主要会计数据/会计数据和财务指标）稳定保留在 chunk 开头，
-        利用它把指标表提到审计政策段落前面。
+        但表头文字（主要会计数据/会计数据和财务指标）稳定保留在 chunk 开头。
+        这里做两件事：
+        1. pre-rerank 加权（×financial_boost）：保证指标表能进入重排候选池
+           （实测 BM25/稠密下"主要会计数据"表常排 100+ 名，不加权根本进不了 top30）；
+        2. 打上 _fin_anchor 标记：词法/交叉编码重排阶段再给一次额外加分，
+           否则指标表在"词法重叠率主导"的兜底重排里仍会被审计政策段落/半年报段落挤掉。
+        只对命中 _MAIN_TABLE_KW 的查询生效：毛利率类查询的答案在"主营业务分行业/分产品"表，
+        不锚定指标表，避免把正确表格挤出 top-k。
         """
         if not any(k in query for k in _FIN_QUERY_KW):
             return hits
+        is_main_table = any(k in query for k in _MAIN_TABLE_KW)
+        # 查询明确问"上半年/半年报"时，半年报指标表也是规范答案；否则默认整年口径 → 年报指标表优先
+        prefer_half = any(k in query for k in ("半年报", "上半年", "半年度"))
         for h in hits:
             text = h.get("text", "") or ""
             section = h.get("section_path", "") or ""
             head = text[:200] + section
             if any(k in head for k in _FIN_SECTION_KW):
-                h["score"] *= 2.0
+                h["score"] *= self.config.financial_boost
+                if is_main_table:
+                    src = h.get("source", "") or ""
+                    title = h.get("title", "") or ""
+                    # Windows 路径是反斜杠，统一转正斜杠再判断目录类别
+                    src_posix = src.replace("\\", "/")
+                    is_half = "半年度报告" in title or "/bndbg/" in src_posix
+                    is_annual = (not is_half) and ("年度报告" in title or "/ndbg/" in src_posix)
+                    # 只有"年报指标表"（或明确问半年时）才打核心块标记，
+                    # 避免"2023年净利润"这类整年问题被 2023 半年报指标表抢走排名。
+                    if prefer_half or is_annual:
+                        h["_fin_anchor"] = True
+        hits.sort(key=lambda h: h["score"], reverse=True)
+        return hits
+
+    def _apply_party_anchor(self, query: str, hits: list[dict]) -> list[dict]:
+        """股东信息锚定：查询问"控股股东/股东名称/大股东"时，提升含"控股股东…指"定义模式的 chunk。
+
+        这类"名称"问题的规范答案常落在年报"释义/第一节 释义"段（如
+        '控股股东、集团公司 指 中国贵州茅台酒厂（集团）有限责任公司'），
+        但该段文本短、BM25/稠密排名很低，需要单独锚定才能进重排候选池。
+        """
+        if not any(k in query for k in _PARTY_QUERY_KW):
+            return hits
+        for h in hits:
+            text = h.get("text", "") or ""
+            section = h.get("section_path", "") or ""
+            head = text[:200] + section
+            if any(k in head for k in _PARTY_SECTION_KW) and "指" in head:
+                h["score"] *= self.config.financial_boost
+                h["_fin_anchor"] = True
         hits.sort(key=lambda h: h["score"], reverse=True)
         return hits
 
@@ -180,6 +247,7 @@ class Retriever:
         fused = self._apply_report_type_filter(query, fused)
         fused = self._apply_table_weight(query, fused)
         fused = self._apply_financial_section_boost(query, fused)
+        fused = self._apply_party_anchor(query, fused)
         fused = fused[:max(top_k, 30)]  # 锚定加权后再截断，避免把低频表挤掉
 
         if self.reranker is not None and len(fused) > 1:

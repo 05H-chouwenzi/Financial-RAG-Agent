@@ -59,6 +59,7 @@ EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
 
 # ===== 重排 =====
 RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
+RERANK_BACKEND = os.getenv("RERANK_BACKEND", "auto")  # auto | bge | lexical
 RERANK_ENABLED = _get_bool("RERANK_ENABLED", True)
 
 # ===== LLM（OpenAI 兼容接口，默认阿里云 Dashscope） =====
@@ -81,6 +82,9 @@ RETRIEVAL_FINAL_K = int(os.getenv("RETRIEVAL_FINAL_K", "5"))  # 最终返回数
 FUSION_W_DENSE = float(os.getenv("FUSION_W_DENSE", "0.5"))
 FUSION_W_SPARSE = float(os.getenv("FUSION_W_SPARSE", "0.5"))
 TABLE_WEIGHT = float(os.getenv("TABLE_WEIGHT", "2.0"))
+FINANCIAL_BOOST = float(os.getenv("FINANCIAL_BOOST", "2.0"))  # 指标表核心块 pre-rerank 加权
+FINANCIAL_ANCHOR_BONUS = float(os.getenv("FINANCIAL_ANCHOR_BONUS", "0.10"))  # 指标表核心块重排加分
+FINANCIAL_ANCHOR_BONUS = float(os.getenv("FINANCIAL_ANCHOR_BONUS", "0.10"))  # 指标表核心块重排加分
 REFUSAL_THRESHOLD = float(os.getenv("REFUSAL_THRESHOLD", "0.10"))
 STRICT_NUMBERS = _get_bool("STRICT_NUMBERS", True)
 
