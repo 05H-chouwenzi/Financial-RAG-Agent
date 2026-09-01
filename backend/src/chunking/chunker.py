@@ -39,6 +39,19 @@ class Chunk:
     def to_dict(self) -> dict:
         return asdict(self)
 
+    def friendly_source(self) -> str:
+        """用户可读的引用来源：'平安银行 2023年年度报告'（原始文件名可能不含公司名）"""
+        company = self.company or ""
+        title = self.title or ""
+        if "半年度报告" in title:
+            rtype = "半年度报告"
+        elif "年度报告" in title:
+            rtype = "年度报告"
+        else:
+            rtype = "报告"
+        name = f"{company} {self.period_year}年{rtype}" if self.period_year else f"{company} {rtype}"
+        return name.strip() or (self.title or self.doc_id)
+
     def search_text(self) -> str:
         """索引检索用文本：元数据前缀 + 原文。
 

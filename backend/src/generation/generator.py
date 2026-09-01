@@ -40,7 +40,7 @@ class RAGGenerator:
         parts = [f"问题：{query}", "", "【参考资料】"]
         for i, h in enumerate(hits, 1):
             chunk = h["chunk"]
-            parts.append(f"\n[{i}] 来源: {chunk.source} 第{chunk.page}页 章节: {chunk.section_path}")
+            parts.append(f"\n[{i}] 来源: {chunk.friendly_source()} 第{chunk.page}页 章节: {chunk.section_path}")
             parts.append(h["text"][:1500])
         return "\n".join(parts)
 

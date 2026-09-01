@@ -75,8 +75,12 @@ def ensure_citations(answer: str, evidences: list[dict], max_refs: int = 5) -> s
     refs = []
     for i, ev in enumerate(evidences[:max_refs], 1):
         chunk = ev.get("chunk")
-        source = chunk.source if chunk else ev.get("source", "未知来源")
-        page = chunk.page if chunk else ev.get("page", "")
+        if chunk is not None:
+            source = chunk.friendly_source()  # 公司名+年份+报告类型，而非原始文件路径
+            page = chunk.page
+        else:
+            source = ev.get("source", "未知来源")
+            page = ev.get("page", "")
         page_txt = f" 第{page}页" if page else ""
         refs.append(f"[{i}] {source}{page_txt}")
     if not refs:

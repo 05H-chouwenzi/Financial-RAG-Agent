@@ -95,6 +95,7 @@ def search(req: SearchRequest):
             {
                 "score": h["score"],
                 "source": h["chunk"].source,
+                "source_name": h["chunk"].friendly_source(),
                 "page": h["chunk"].page,
                 "section": h["chunk"].section_path,
                 "year": h["chunk"].period_year,
@@ -118,7 +119,7 @@ def chat(req: ChatRequest):
         "refused": result.get("refused", False),
         "num_check": result.get("num_check", []),
         "hits": [
-            {"score": h["score"], "source": h["chunk"].source,
+            {"score": h["score"], "source": h["chunk"].source, "source_name": h["chunk"].friendly_source(),
              "page": h["chunk"].page, "text": h["text"][:300]}
             for h in result.get("hits", [])
         ],
@@ -191,7 +192,7 @@ async function ask(){
     let s = "【意图】" + (d.intent||"") + (d.refused ? "（已拒答）" : "") + "\n\n" + d.answer;
     if(d.num_check && d.num_check.length) s += "\n\n⚠️ 数字校验未通过: " + d.num_check.join(", ");
     s += "\n\n--- 检索依据 ---";
-    (d.hits||[]).forEach((h,i)=>{ s += "\n["+(i+1)+"] " + h.source.split("\\").pop() + " 第" + h.page + "页 (score " + h.score.toFixed(3) + ")"; });
+    (d.hits||[]).forEach((h,i)=>{ s += "\n["+(i+1)+"] " + (h.source_name || h.source.split("\\").pop()) + " 第" + h.page + "页 (score " + h.score.toFixed(3) + ")"; });
     out.textContent = s;
   }catch(e){ out.textContent = "❌ " + e.message; }
 }
