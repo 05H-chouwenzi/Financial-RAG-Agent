@@ -134,7 +134,8 @@ Hit@5 +18.8pp、MRR +20.2pp、NDCG@5 +26.8pp，矛盾消除。历史 `v3` 与 `a
 ## 已知限制与后续优化
 
 1. **LLM 已配置 DeepSeek**：`backend/.env` 使用 `DASHSCOPE_BASE_URL=https://api.deepseek.com/v1` + `LLM_MODEL=deepseek-chat`（OpenAI 兼容接口，变量名沿用历史命名）；
-   真实问答已验证：引用溯源 + 数字校验（已支持万元/亿元/百万元单位换算匹配）+ 拒答可用，数字校验通过率 78.9%，剩余误报来自回答中的解释性数字。
+   真实问答已验证：引用溯源 + 数字校验（已支持万元/亿元/百万元单位换算匹配）+ 拒答可用；
+   最新 19 条生成评估数字校验通过率 100%（RAGAS 实跑同批）。
 2. **真实重排可用**：已安装 `FlagEmbedding` + bge-reranker-v2-m3（ModelScope 本地下载，`RERANK_MODEL` 指向本地路径）。
    默认后端为 bge；可用 `RERANK_BACKEND=lexical` 强制词法兜底（批量评估加速）。
 3. **真实数据检索定位**：财务数字问答曾命中审计「收入确认」政策段落而非「主要会计数据」表。
@@ -142,7 +143,7 @@ Hit@5 +18.8pp、MRR +20.2pp、NDCG@5 +26.8pp，矛盾消除。历史 `v3` 与 `a
    「茅台2023营收」已修复（指标表进入 top-1）；「控股股东名称」类问题通过股东信息锚定命中释义段。
 4. **RAGAS 与 DeepSeek 兼容注意**：DeepSeek 只支持 `n=1` 且无 embeddings 接口，故 `ResponseRelevancy(strictness=1)` +
    本地 bge 向量作 embeddings；该配置已在 `src/eval/ragas_eval.py` 处理。
-4. **真实 PDF 复杂场景**：扫描件/复杂版面建议安装 MinerU / PaddleOCR PP-Structure（解析器已留好集成点）。
+5. **真实 PDF 复杂场景**：扫描件/复杂版面建议安装 MinerU / PaddleOCR PP-Structure（解析器已留好集成点）。
 
 ## 技术栈
 
